@@ -1,10 +1,9 @@
 # src/encryption/vault.py
 import os
 import base64
-import hashlib
+import binascii
+import pandas as pd
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
 
 class SimpleVault:
     """
@@ -20,22 +19,28 @@ class SimpleVault:
 
     def _load_or_create_kek(self) -> bytes:
         """
-        TODO: Load KEK từ file nếu tồn tại, 
-              ngược lại generate 32-byte random key và lưu vào file.
+        Load the KEK or create and persist a new 256-bit key.
         QUAN TRỌNG: Trong production, KEK phải lưu trong HSM/KMS, không phải file.
         """
         if os.path.exists(self.master_key_path):
             with open(self.master_key_path, "rb") as f:
-                return base64.b64decode(f.read())
+                try:
+                    kek = base64.b64decode(f.read(), validate=True)
+                except (ValueError, binascii.Error) as exc:
+                    raise ValueError("Vault KEK file is not valid base64") from exc
+                if len(kek) != 32:
+                    raise ValueError("Vault KEK must be exactly 32 bytes")
+                return kek
         else:
             kek = os.urandom(32)  # 256-bit key
             with open(self.master_key_path, "wb") as f:
                 f.write(base64.b64encode(kek))
+            os.chmod(self.master_key_path, 0o600)
             return kek
 
     def generate_dek(self) -> tuple[bytes, bytes]:
         """
-        TODO: Generate một Data Encryption Key (DEK) mới.
+        Generate a new Data Encryption Key (DEK).
         Trả về (plaintext_dek, encrypted_dek).
         Dùng AESGCM để encrypt DEK bằng KEK.
         """
@@ -50,7 +55,7 @@ class SimpleVault:
 
     def decrypt_dek(self, encrypted_dek: bytes) -> bytes:
         """
-        TODO: Decrypt encrypted DEK bằng KEK.
+        Decrypt an encrypted DEK with the KEK.
         Trả về plaintext DEK.
         """
         nonce = encrypted_dek[:12]
@@ -60,7 +65,7 @@ class SimpleVault:
 
     def encrypt_data(self, plaintext: str) -> dict:
         """
-        TODO: Implement envelope encryption.
+        Encrypt a string using envelope encryption.
         1. Generate DEK mới
         2. Encrypt data bằng plaintext DEK
         3. Xóa plaintext DEK khỏi memory
@@ -75,10 +80,9 @@ class SimpleVault:
         """
         plaintext_dek, encrypted_dek = self.generate_dek()
 
-        # TODO: encrypt data bằng plaintext_dek
         aesgcm = AESGCM(plaintext_dek)
         nonce = os.urandom(12)
-        ciphertext = ___   # TODO
+        ciphertext = aesgcm.encrypt(nonce, plaintext.encode("utf-8"), None)
 
         # Xóa plaintext DEK
         del plaintext_dek
@@ -91,7 +95,7 @@ class SimpleVault:
 
     def decrypt_data(self, encrypted_payload: dict) -> str:
         """
-        TODO: Decrypt data từ envelope encryption payload.
+        Decrypt data from an envelope-encryption payload.
         1. Decrypt DEK bằng KEK
         2. Decrypt data bằng DEK
         3. Trả về plaintext string
@@ -99,10 +103,11 @@ class SimpleVault:
         encrypted_dek = base64.b64decode(encrypted_payload["encrypted_dek"])
         ciphertext_with_nonce = base64.b64decode(encrypted_payload["ciphertext"])
 
-        # TODO: implement decryption
-        plaintext_dek = ___   # TODO
-        nonce = ___           # TODO (first 12 bytes)
-        ciphertext = ___      # TODO (remaining bytes)
+        if encrypted_payload.get("algorithm") != "AES-256-GCM":
+            raise ValueError("Unsupported encryption algorithm")
+        plaintext_dek = self.decrypt_dek(encrypted_dek)
+        nonce = ciphertext_with_nonce[:12]
+        ciphertext = ciphertext_with_nonce[12:]
 
         aesgcm = AESGCM(plaintext_dek)
         plaintext = aesgcm.decrypt(nonce, ciphertext, None)
@@ -110,12 +115,14 @@ class SimpleVault:
 
         return plaintext.decode()
 
-    def encrypt_column(self, df, column: str) -> pd.DataFrame:
+    def encrypt_column(self, df: pd.DataFrame, column: str) -> pd.DataFrame:
         """
-        TODO: Encrypt một cột trong DataFrame.
+        Encrypt a DataFrame column.
         Thay thế giá trị gốc bằng JSON string của encrypted payload.
         """
         import json
+        if column not in df.columns:
+            raise ValueError(f"Unknown column: {column}")
         df = df.copy()
         df[column] = df[column].apply(
             lambda x: json.dumps(self.encrypt_data(str(x)))

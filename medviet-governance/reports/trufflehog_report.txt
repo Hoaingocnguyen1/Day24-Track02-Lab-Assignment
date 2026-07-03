@@ -1,0 +1,5 @@
+🐷🔑🐷  TruffleHog. Unearth your secrets. 🐷🔑🐷
+
+2026-06-30T11:59:10+07:00	info-0	trufflehog	running source	{"source_manager_worker_id": "EZSR6", "with_units": true}
+2026-06-30T11:59:10+07:00	info-0	trufflehog	scanning repo	{"source_manager_worker_id": "EZSR6", "unit_kind": "dir", "unit": "/tmp/trufflehog-44633-4159612328", "repo": "file:///home/anhquan/Day24-Track02-Lab-Assignment"}
+2026-06-30T11:59:10+07:00	info-0	trufflehog	finished scanning	{"chunks": 31, "bytes": 105201, "verified_secrets": 0, "unverified_secrets": 0, "scan_duration": "42.083347494s", "trufflehog_version": "3.95.7", "verification_caching": {"Hits":0,"Misses":0,"HitsWasted":0,"AttemptsSaved":0,"VerificationTimeSpentMS":0}}
